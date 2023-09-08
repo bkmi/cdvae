@@ -1,0 +1,15 @@
+_target_: cdvae.pl_modules.decoder.SCNDecoder
+num_interactions: 4
+hidden_channels: 64
+sphere_channels: ${model.latent_dim}
+sphere_channels_reduce: ${model.latent_dim}
+num_sphere_samples: 64
+num_basis_functions: 128
+distance_function: "gaussian"
+max_neighbors: ${model.max_neighbors}
+radius: ${model.radius}
+lmax: 6
+num_bands: 2
+use_grid: True
+basis_width_scalar: 2.0
+max_num_elements: 120

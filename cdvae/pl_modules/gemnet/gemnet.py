@@ -123,6 +123,7 @@ class GemNetT(torch.nn.Module):
         output_init: str = "HeOrthogonal",
         activation: str = "swish",
         scale_file: Optional[str] = None,
+        conditioning_dim: int = 0,
     ):
         super().__init__()
         self.num_targets = num_targets
@@ -188,6 +189,13 @@ class GemNetT(torch.nn.Module):
             bias=False,
         )
         ### ------------------------------------------------------------------------------------- ###
+
+        if conditioning_dim > 0:
+            self.cond_mlp_node = Dense(conditioning_dim, emb_size_atom * 2, activation=activation, bias=False)
+            self.cond_mlp_edge = Dense(conditioning_dim, emb_size_edge * 2, activation=activation, bias=False)
+        else:
+            self.cond_mlp_node = None
+            self.cond_mlp_edge = None
 
         # Embedding block
         self.atom_emb = AtomEmbedding(emb_size_atom)
@@ -495,8 +503,12 @@ class GemNetT(torch.nn.Module):
             id3_ragged_idx,
         )
 
+    def scale_and_shift(self, scale_shift, x):
+        scale, shift = scale_shift.chunk(2, dim=-1)
+        return scale * x + shift
+
     def forward(self, z, frac_coords, atom_types, num_atoms, lengths, angles,
-                edge_index, to_jimages, num_bonds):
+                edge_index, to_jimages, num_bonds, conditional=None):
         """
         args:
             z: (N_cryst, num_latent)
@@ -509,6 +521,9 @@ class GemNetT(torch.nn.Module):
             atom_frac_coords: (N_atoms, 3)
             atom_types: (N_atoms, MAX_ATOMIC_NUM)
         """
+        if conditional is not None:
+            assert self.cond_mlp_node is not None and self.cond_mlp_edge is not None
+
         pos = frac_to_cart_coords(frac_coords, lengths, angles, num_atoms)
         batch = torch.arange(num_atoms.size(0),
                              device=num_atoms.device).repeat_interleave(
@@ -544,6 +559,15 @@ class GemNetT(torch.nn.Module):
             h = self.atom_latent_emb(h)
         # (nAtoms, emb_size_atom)
         m = self.edge_emb(h, rbf, idx_s, idx_t)  # (nEdges, emb_size_edge)
+
+        if conditional is not None:
+            conditional_nodes = conditional.repeat_interleave(num_atoms, dim=0)
+            scale_shift_h = self.cond_mlp_node(conditional_nodes)
+            h = self.scale_and_shift(scale_shift_h, h)
+            # conditional_edge = conditional.repeat_interleave(num_edges, dim=0)
+            # scale_shift_m = self.cond_mlp_edge(conditional)
+            # m = self.scale_and_shift(scale_shift_m, m)
+            # print("SHAPES", scale_shift_h.shape, scale_shift_m.shape, h.shape, m.shape)
 
         rbf3 = self.mlp_rbf3(rbf)
         cbf3 = self.mlp_cbf3(rad_cbf3, cbf3, id3_ca, id3_ragged_idx)

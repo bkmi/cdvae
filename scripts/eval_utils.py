@@ -185,6 +185,8 @@ def prop_model_eval(eval_model_name, crystal_array_list):
     model_path = get_model_path(eval_model_name)
 
     model, _, _ = load_model(model_path)
+    print(model)
+    print(model_path)
     cfg = load_config(model_path)
 
     dataset = TensorCrystDataset(

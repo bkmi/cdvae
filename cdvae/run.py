@@ -18,6 +18,8 @@ from pytorch_lightning.loggers import WandbLogger
 
 from cdvae.common.utils import log_hyperparameters, PROJECT_ROOT
 
+OmegaConf.register_new_resolver("eval", eval)
+
 
 def build_callbacks(cfg: DictConfig) -> List[Callback]:
     callbacks: List[Callback] = []
@@ -105,6 +107,7 @@ def run(cfg: DictConfig) -> None:
     model.scaler = datamodule.scaler.copy()
     torch.save(datamodule.lattice_scaler, hydra_dir / 'lattice_scaler.pt')
     torch.save(datamodule.scaler, hydra_dir / 'prop_scaler.pt')
+    torch.save(datamodule.cond_scaler, hydra_dir / 'cond_scaler.pt')
     # Instantiate the callbacks
     callbacks: List[Callback] = build_callbacks(cfg=cfg)
 
@@ -146,8 +149,10 @@ def run(cfg: DictConfig) -> None:
         check_val_every_n_epoch=cfg.logging.val_check_interval,
         progress_bar_refresh_rate=cfg.logging.progress_bar_refresh_rate,
         resume_from_checkpoint=ckpt,
+        auto_select_gpus=True,
         **cfg.train.pl_trainer,
     )
+    hydra.utils.log.info(f"GPUS: {trainer.gpus}")
     log_hyperparameters(trainer=trainer, model=model, cfg=cfg)
 
     hydra.utils.log.info("Starting training!")

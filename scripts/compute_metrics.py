@@ -264,7 +264,7 @@ def get_file_paths(root_path, task, label='', suffix='pt'):
     return out_name
 
 
-def get_crystal_array_list(file_path, batch_idx=0):
+def get_crystal_array_list(file_path, args=None, batch_idx=0):
     data = load_data(file_path)
     crys_array_list = get_crystals_list(
         data['frac_coords'][batch_idx],
@@ -273,18 +273,33 @@ def get_crystal_array_list(file_path, batch_idx=0):
         data['angles'][batch_idx],
         data['num_atoms'][batch_idx])
 
+    ehull_list = []
     if 'input_data_batch' in data:
         batch = data['input_data_batch']
         if isinstance(batch, dict):
             true_crystal_array_list = get_crystals_list(
                 batch['frac_coords'], batch['atom_types'], batch['lengths'],
                 batch['angles'], batch['num_atoms'])
+            ehull_list.extend(batch["cond"])
         else:
             true_crystal_array_list = get_crystals_list(
                 batch.frac_coords, batch.atom_types, batch.lengths,
                 batch.angles, batch.num_atoms)
+            ehull_list.extend(batch.cond)
     else:
         true_crystal_array_list = None
+
+    if true_crystal_array_list is not None:
+        assert len(crys_array_list) == len(true_crystal_array_list)
+        assert len(crys_array_list) == len(ehull_list)
+        print("Number of crystals before filtering: ", len(crys_array_list))
+        crys_array_list = [
+            crys for crys, ehull in zip(crys_array_list, ehull_list) 
+            if args.min_ehull <= ehull <= args.max_ehull]
+        true_crystal_array_list = [
+            crys for crys, ehull in zip(true_crystal_array_list, ehull_list) 
+            if args.min_ehull <= ehull <= args.max_ehull]
+        print("Number of crystals after filtering: ", len(crys_array_list))
 
     return crys_array_list, true_crystal_array_list
 
@@ -298,7 +313,7 @@ def main(args):
     if 'recon' in args.tasks:
         recon_file_path = get_file_paths(args.root_path, 'recon', args.label)
         crys_array_list, true_crystal_array_list = get_crystal_array_list(
-            recon_file_path)
+            recon_file_path, args)
         pred_crys = p_map(lambda x: Crystal(x), crys_array_list)
         gt_crys = p_map(lambda x: Crystal(x), true_crystal_array_list)
 
@@ -333,9 +348,9 @@ def main(args):
     print(all_metrics)
 
     if args.label == '':
-        metrics_out_file = 'eval_metrics.json'
+        metrics_out_file = f'eval_metrics_{args.min_ehull}_{args.max_ehull}.json'
     else:
-        metrics_out_file = f'eval_metrics_{args.label}.json'
+        metrics_out_file = f'eval_metrics_{args.label}_{args.min_ehull}_{args.max_ehull}.json'
     metrics_out_file = os.path.join(args.root_path, metrics_out_file)
 
     # only overwrite metrics computed in the new run.
@@ -360,5 +375,7 @@ if __name__ == '__main__':
     parser.add_argument('--root_path', required=True)
     parser.add_argument('--label', default='')
     parser.add_argument('--tasks', nargs='+', default=['recon', 'gen', 'opt'])
+    parser.add_argument('--min-ehull', type=float, default=0.)
+    parser.add_argument('--max-ehull', type=float, default=10.)
     args = parser.parse_args()
     main(args)

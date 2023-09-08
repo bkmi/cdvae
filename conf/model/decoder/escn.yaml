@@ -1,0 +1,24 @@
+_target_: cdvae.pl_modules.decoder.ESCNDecoder
+basis_width_scalar: 2.0
+decomposition_stress: true
+distance_function: gaussian
+edge_level: false
+extensive_energy: false
+extensive_stress: false
+hidden_channels: 256
+lmax_list:
+- 6
+max_neighbors: 20
+# max_num_elements: 95
+max_num_elements: 120
+mixing_coordinates: false
+mmax_list:
+- 2
+num_layers: 12
+num_sphere_samples: 128
+otf_graph: true
+outer_product_stress: false
+regress_forces: true
+regress_stress: true
+sphere_channels: 128
+use_pbc: true

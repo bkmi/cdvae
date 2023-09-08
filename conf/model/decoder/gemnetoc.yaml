@@ -1,0 +1,59 @@
+activation: silu
+atom_edge_interaction: true
+atom_interaction: true
+cbf:
+  name: spherical_harmonics
+cutoff: 12.0
+cutoff_aeaint: 12.0
+cutoff_aint: 12.0
+cutoff_qint: 12.0
+decomposition_stress: true
+direct_forces: true
+edge_atom_interaction: true
+edge_level: true
+emb_size_aint_in: 64
+emb_size_aint_out: 64
+emb_size_atom: 256
+emb_size_cbf: 16
+emb_size_edge: 512
+emb_size_quad_in: 32
+emb_size_quad_out: 32
+emb_size_rbf: 16
+emb_size_sbf: 32
+emb_size_trip_in: 64
+emb_size_trip_out: 64
+envelope:
+  exponent: 5
+  name: polynomial
+extensive: false
+extensive_stress: false
+forces_coupled: false
+max_neighbors: 30
+max_neighbors_aeaint: 20
+max_neighbors_aint: 1000
+max_neighbors_qint: 8
+mixing_coordinates: false
+num_after_skip: 2
+num_atom: 3
+num_atom_emb_layers: 2
+num_before_skip: 2
+num_blocks: 4
+num_concat: 1
+num_elements: 95
+num_global_out_layers: 2
+num_output_afteratom: 3
+num_radial: 128
+num_spherical: 7
+otf_graph: true
+outer_product_stress: false
+output_init: HeOrthogonal
+qint_tags:
+- 1
+- 2
+quad_interaction: true
+rbf:
+  name: gaussian
+regress_forces: true
+regress_stress: true
+sbf:
+  name: legendre_outer

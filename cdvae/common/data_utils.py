@@ -609,7 +609,8 @@ class StandardScalerTorch(object):
         self.stds = stds
 
     def fit(self, X):
-        X = torch.tensor(X, dtype=torch.float)
+        # X = torch.tensor(X, dtype=torch.float)
+        X = X.clone().detach().float()
         self.means = torch.mean(X, dim=0)
         # https://github.com/pytorch/pytorch/issues/29372
         self.stds = torch.std(X, dim=0, unbiased=False) + EPSILON
@@ -619,7 +620,8 @@ class StandardScalerTorch(object):
         return (X - self.means) / self.stds
 
     def inverse_transform(self, X):
-        X = torch.tensor(X, dtype=torch.float)
+        # X = torch.tensor(X, dtype=torch.float)
+        X = X.clone().detach().float()
         return X * self.stds + self.means
 
     def match_device(self, tensor):
@@ -641,7 +643,9 @@ class StandardScalerTorch(object):
 
 
 def get_scaler_from_data_list(data_list, key):
-    targets = torch.tensor([d[key] for d in data_list])
+    # targets = torch.tensor([d[key] for d in data_list])
+    targets = np.array([d[key] for d in data_list])
+    targets = torch.tensor(targets)
     scaler = StandardScalerTorch()
     scaler.fit(targets)
     return scaler

@@ -12,7 +12,7 @@ from eval_utils import load_model
 
 
 def reconstructon(loader, model, ld_kwargs, num_evals,
-                  force_num_atoms=False, force_atom_types=False, down_sample_traj_step=1):
+                  force_num_atoms=False, force_atom_types=False, down_sample_traj_step=1, cond_scale=None):
     """
     reconstruct the crystals in <loader>.
     """
@@ -41,7 +41,7 @@ def reconstructon(loader, model, ld_kwargs, num_evals,
             gt_num_atoms = batch.num_atoms if force_num_atoms else None
             gt_atom_types = batch.atom_types if force_atom_types else None
             outputs = model.langevin_dynamics(
-                z, ld_kwargs, gt_num_atoms, gt_atom_types)
+                z, ld_kwargs, gt_num_atoms, gt_atom_types, cond_scale)
 
             # collect sampled crystals in this batch.
             batch_frac_coords.append(outputs['frac_coords'].detach().cpu())
@@ -84,7 +84,7 @@ def reconstructon(loader, model, ld_kwargs, num_evals,
 
 
 def generation(model, ld_kwargs, num_batches_to_sample, num_samples_per_z,
-               batch_size=512, down_sample_traj_step=1):
+               batch_size=512, down_sample_traj_step=1, cond_scale=None):
     all_frac_coords_stack = []
     all_atom_types_stack = []
     frac_coords = []
@@ -103,7 +103,7 @@ def generation(model, ld_kwargs, num_batches_to_sample, num_samples_per_z,
                         device=model.device)
 
         for sample_idx in range(num_samples_per_z):
-            samples = model.langevin_dynamics(z, ld_kwargs)
+            samples = model.langevin_dynamics(z, ld_kwargs, cond_scale=cond_scale)
 
             # collect sampled crystals in this batch.
             batch_frac_coords.append(samples['frac_coords'].detach().cpu())
@@ -143,7 +143,7 @@ def generation(model, ld_kwargs, num_batches_to_sample, num_samples_per_z,
 
 def optimization(model, ld_kwargs, data_loader,
                  num_starting_points=100, num_gradient_steps=5000,
-                 lr=1e-3, num_saved_crys=10):
+                 lr=1e-3, num_saved_crys=10, cond_scale=None):
     if data_loader is not None:
         batch = next(iter(data_loader)).to(model.device)
         _, _, z = model.encode(batch)
@@ -166,7 +166,7 @@ def optimization(model, ld_kwargs, data_loader,
         opt.step()
 
         if i % interval == 0 or i == (num_gradient_steps-1):
-            crystals = model.langevin_dynamics(z, ld_kwargs)
+            crystals = model.langevin_dynamics(z, ld_kwargs, cond_scale=cond_scale)
             all_crystals.append(crystals)
     return {k: torch.cat([d[k] for d in all_crystals]).unsqueeze(0) for k in
             ['frac_coords', 'atom_types', 'num_atoms', 'lengths', 'angles']}
@@ -193,7 +193,8 @@ def main(args):
         (frac_coords, num_atoms, atom_types, lengths, angles,
          all_frac_coords_stack, all_atom_types_stack, input_data_batch) = reconstructon(
             test_loader, model, ld_kwargs, args.num_evals,
-            args.force_num_atoms, args.force_atom_types, args.down_sample_traj_step)
+            args.force_num_atoms, args.force_atom_types, args.down_sample_traj_step,
+            cond_scale=args.cond_scale)
 
         if args.label == '':
             recon_out_name = 'eval_recon.pt'
@@ -273,6 +274,7 @@ if __name__ == '__main__':
     parser.add_argument('--force_num_atoms', action='store_true')
     parser.add_argument('--force_atom_types', action='store_true')
     parser.add_argument('--down_sample_traj_step', default=10, type=int)
+    parser.add_argument('--cond_scale', default=None, type=float)
     parser.add_argument('--label', default='')
 
     args = parser.parse_args()

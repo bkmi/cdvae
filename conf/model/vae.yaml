@@ -22,6 +22,21 @@ type_sigma_end: 0.01
 num_noise_level: 50
 predict_property: False
 
+condition_on_time: False
+time_embed_dim: 32
+time_dropout: 0.1
+condition_on_prop: False
+prop_embed_dim: 32
+prop_dropout: 0.1
+
+cond_scale: 6
+# sample_conditional: True
+# cond_value: 0
+# max_cond_value: 10.
+
 defaults:
   - encoder: dimenet
   - decoder: gemnet
+  # - decoder: scn
+  # - decoder: scn_4x256
+  # - decoder: escn

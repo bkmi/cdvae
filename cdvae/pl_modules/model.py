@@ -1,5 +1,6 @@
 from typing import Any, Dict
 
+import math
 import hydra
 import numpy as np
 import omegaconf
@@ -16,6 +17,56 @@ from cdvae.common.data_utils import (
     frac_to_cart_coords, min_distance_sqr_pbc)
 from cdvae.pl_modules.embeddings import MAX_ATOMIC_NUM
 from cdvae.pl_modules.embeddings import KHOT_EMBEDDINGS
+
+
+class SinusoidalPositionEmbedding(nn.Module):
+    def __init__(self, dim):
+        super().__init__()
+        self.dim = dim
+
+    def forward(self, time):
+        device = time.device
+        half_dim = self.dim // 2
+        embeddings = math.log(10000) / (half_dim - 1)
+        embeddings = torch.exp(torch.arange(half_dim, device=device) * -embeddings)
+        embeddings = time[:, None] * embeddings[None, :]
+        embeddings = torch.cat((embeddings.sin(), embeddings.cos()), dim=-1)
+        return embeddings
+
+
+def gaussian(alpha):
+    phi = torch.exp(-1*alpha.pow(2))
+    return phi
+
+
+class RadialBasisEmbedding(nn.Module):
+    def __init__(self, in_features, out_features, basis_func=gaussian, learnable=False, min_val=-1., max_val=1., sigma_init=0.02):
+        super().__init__()
+        self.in_features = in_features
+        self.out_features = out_features
+        self.sigma_init = sigma_init
+        self.learnable = learnable
+        if learnable:
+            self.centres = nn.Parameter(torch.Tensor(out_features, in_features))
+            self.log_sigmas = nn.Parameter(torch.Tensor(out_features))
+        else:
+            self.centres = torch.linspace(min_val, max_val, out_features).unsqueeze(1).repeat(1, in_features)
+            self.log_sigmas = torch.Tensor(out_features)
+        self.basis_func = basis_func
+        self.reset_parameters()
+
+    def reset_parameters(self):
+        if self.learnable:
+            nn.init.normal_(self.centres, 0, 1)
+        nn.init.constant_(self.log_sigmas, self.sigma_init)
+
+    def forward(self, input):
+        size = (input.size(0), self.out_features, self.in_features)
+        x = input.unsqueeze(1).expand(size)
+        c = self.centres.unsqueeze(0).expand(size).to(x.device)
+        self.log_sigmas = self.log_sigmas.to(x.device)
+        distances = (x - c).pow(2).sum(-1).pow(0.5) / torch.exp(self.log_sigmas).unsqueeze(0)
+        return self.basis_func(distances)
 
 
 def build_mlp(in_dim, hidden_dim, fc_num_layers, out_dim):
@@ -137,9 +188,19 @@ class CDVAE(BaseModule):
     def __init__(self, *args, **kwargs) -> None:
         super().__init__(*args, **kwargs)
 
+        conditioning_dim = 0
+        if self.hparams.condition_on_time:
+            self.time_embed = SinusoidalPositionEmbedding(self.hparams.time_embed_dim)
+            self.add_module('time_embed', self.time_embed)
+            conditioning_dim += self.hparams.time_embed_dim
+        if self.hparams.condition_on_prop:
+            self.prop_embed = RadialBasisEmbedding(1, self.hparams.prop_embed_dim)
+            self.add_module('prop_embed', self.prop_embed)
+            conditioning_dim += self.hparams.prop_embed_dim
+
         self.encoder = hydra.utils.instantiate(
             self.hparams.encoder, num_targets=self.hparams.latent_dim)
-        self.decoder = hydra.utils.instantiate(self.hparams.decoder)
+        self.decoder = hydra.utils.instantiate(self.hparams.decoder, conditioning_dim=conditioning_dim)
 
         self.fc_mu = nn.Linear(self.hparams.latent_dim,
                                self.hparams.latent_dim)
@@ -223,7 +284,7 @@ class CDVAE(BaseModule):
         return num_atoms, lengths_and_angles, lengths, angles, composition_per_atom
 
     @torch.no_grad()
-    def langevin_dynamics(self, z, ld_kwargs, gt_num_atoms=None, gt_atom_types=None):
+    def langevin_dynamics(self, z, ld_kwargs, gt_num_atoms=None, gt_atom_types=None, cond_scale=None):
         """
         decode crystral structure from latent embeddings.
         ld_kwargs: args for doing annealed langevin dynamics sampling:
@@ -235,6 +296,8 @@ class CDVAE(BaseModule):
         gt_num_atoms: if not <None>, use the ground truth number of atoms.
         gt_atom_types: if not <None>, use the ground truth atom types.
         """
+        cond_scale = cond_scale or self.hparams.cond_scale
+
         if ld_kwargs.save_traj:
             all_frac_coords = []
             all_pred_cart_coord_diff = []
@@ -259,7 +322,7 @@ class CDVAE(BaseModule):
         cur_frac_coords = torch.rand((num_atoms.sum(), 3), device=z.device)
 
         # annealed langevin dynamics.
-        for sigma in tqdm(self.sigmas, total=self.sigmas.size(0), disable=ld_kwargs.disable_bar):
+        for noise_level, sigma in tqdm(enumerate(self.sigmas), total=self.sigmas.size(0), disable=ld_kwargs.disable_bar):
             if sigma < ld_kwargs.min_sigma:
                 break
             step_size = ld_kwargs.step_lr * (sigma / self.sigmas[-1]) ** 2
@@ -267,8 +330,21 @@ class CDVAE(BaseModule):
             for step in range(ld_kwargs.n_step_each):
                 noise_cart = torch.randn_like(
                     cur_frac_coords) * torch.sqrt(step_size * 2)
+                # conditional = self.get_conditionals(self.hparams.cond_value, noise_level, dropout_rate, dropout_rate)
+                cond_value = torch.zeros(z.size(0), device=z.device).unsqueeze(1)  # TODO: use hparam
+                noise_level_ = torch.tensor([noise_level], device=z.device).repeat(z.size(0))
+                
+                conditional = self.get_conditionals(cond_value, noise_level_, 0., 0.)
                 pred_cart_coord_diff, pred_atom_types = self.decoder(
-                    z, cur_frac_coords, cur_atom_types, num_atoms, lengths, angles)
+                    z, cur_frac_coords, cur_atom_types, num_atoms, lengths, angles, conditional=conditional)
+
+                if cond_scale > 1:
+                    conditional_null = self.get_conditionals(cond_value, noise_level_, 1., 1.)
+                    pred_cart_coord_diff_null, pred_atom_types_null = self.decoder(
+                        z, cur_frac_coords, cur_atom_types, num_atoms, lengths, angles, conditional=conditional_null)
+                    pred_cart_coord_diff = pred_cart_coord_diff * cond_scale + pred_cart_coord_diff_null * (1 - cond_scale)
+                    pred_atom_types = pred_atom_types * cond_scale + pred_atom_types_null * (1 - cond_scale)
+                
                 cur_cart_coords = frac_to_cart_coords(
                     cur_frac_coords, lengths, angles, num_atoms)
                 pred_cart_coord_diff = pred_cart_coord_diff / sigma
@@ -308,6 +384,7 @@ class CDVAE(BaseModule):
         return samples
 
     def forward(self, batch, teacher_forcing, training):
+        print("[DEBUG] batch:", batch)
         # hacky way to resolve the NaN issue. Will need more careful debugging later.
         mu, log_var, z = self.encode(batch)
 
@@ -328,15 +405,27 @@ class CDVAE(BaseModule):
         used_type_sigmas_per_atom = (
             self.type_sigmas[type_noise_level].repeat_interleave(
                 batch.num_atoms, dim=0))
+        print("[DEBUG] type_noise_level:", type_noise_level.shape)   # (batch_size, )
 
         # add noise to atom types and sample atom types.
         pred_composition_probs = F.softmax(
             pred_composition_per_atom.detach(), dim=-1)
+        print("[DEBUG] pred_composition_probs:", pred_composition_probs.shape)   # (num_atoms, MAX_ATOMIC_NUM)
         atom_type_probs = (
             F.one_hot(batch.atom_types - 1, num_classes=MAX_ATOMIC_NUM) +
             pred_composition_probs * used_type_sigmas_per_atom[:, None])
-        rand_atom_types = torch.multinomial(
-            atom_type_probs, num_samples=1).squeeze(1) + 1
+        print("[DEBUG] atom_type_probs:", atom_type_probs.shape)   # (num_atoms, MAX_ATOMIC_NUM)
+        try:
+            rand_atom_types = torch.multinomial(
+                atom_type_probs, num_samples=1).squeeze(1) + 1
+            print("[DEBUG] rand_atom_types:", rand_atom_types.shape)   # (num_atoms,)
+        except RuntimeError as ex:
+            print()
+            print('atom_type_probs', atom_type_probs)
+            print('pred_composition_probs', pred_composition_probs)
+            print('used_type_sigmas_per_atom', used_type_sigmas_per_atom)
+            print('batch.atom_types', batch.atom_types - 1)
+            raise ex
 
         # add noise to the cart coords
         cart_noises_per_atom = (
@@ -348,8 +437,16 @@ class CDVAE(BaseModule):
         noisy_frac_coords = cart_to_frac_coords(
             cart_coords, pred_lengths, pred_angles, batch.num_atoms)
 
-        pred_cart_coord_diff, pred_atom_types = self.decoder(
-            z, noisy_frac_coords, rand_atom_types, batch.num_atoms, pred_lengths, pred_angles)
+        conditional = self.get_conditionals(
+            batch.cond, noise_level, self.hparams.time_dropout, self.hparams.prop_dropout)
+        try:
+            pred_cart_coord_diff, pred_atom_types = self.decoder(
+                z, noisy_frac_coords, rand_atom_types, batch.num_atoms, pred_lengths, pred_angles,
+                conditional=conditional)
+        except Exception as ex:
+            print()
+            print("Error in batch:", batch, noise_level, type_noise_level)
+            raise ex
 
         # compute loss.
         num_atom_loss = self.num_atom_loss(pred_num_atoms, batch)
@@ -389,6 +486,23 @@ class CDVAE(BaseModule):
             'rand_atom_types': rand_atom_types,
             'z': z,
         }
+
+    def get_conditionals(self, cond, noise_level, time_dropout, prop_dropout):
+        def _drop(x, p):
+            r = torch.rand(x.size(0)).to(x.device).unsqueeze(1)
+            return torch.where(r < p, torch.zeros_like(x), x)
+
+        conditionals = []
+        if self.hparams.condition_on_time:
+            temb = self.time_embed(noise_level)
+            temb = _drop(temb, time_dropout)
+            conditionals.append(temb)
+        if self.hparams.condition_on_prop:
+            pemb = self.prop_embed(cond)
+            pemb = _drop(pemb, prop_dropout)
+            conditionals.append(pemb)
+        conditional = torch.cat(conditionals, dim=-1) if len(conditionals) > 0 else None
+        return conditional
 
     def generate_rand_init(self, pred_composition_per_atom, pred_lengths,
                            pred_angles, num_atoms, batch):

@@ -1,3 +1,6 @@
+import pickle
+from pathlib import Path
+import joblib
 import hydra
 import omegaconf
 import torch
@@ -14,7 +17,7 @@ from cdvae.common.data_utils import (
 
 class CrystDataset(Dataset):
     def __init__(self, name: ValueNode, path: ValueNode,
-                 prop: ValueNode, niggli: ValueNode, primitive: ValueNode,
+                 prop: ValueNode, cond: ValueNode, niggli: ValueNode, primitive: ValueNode,
                  graph_method: ValueNode, preprocess_workers: ValueNode,
                  lattice_scale_method: ValueNode,
                  **kwargs):
@@ -23,22 +26,33 @@ class CrystDataset(Dataset):
         self.name = name
         self.df = pd.read_csv(path)
         self.prop = prop
+        self.cond = cond
         self.niggli = niggli
         self.primitive = primitive
         self.graph_method = graph_method
         self.lattice_scale_method = lattice_scale_method
 
-        self.cached_data = preprocess(
-            self.path,
-            preprocess_workers,
-            niggli=self.niggli,
-            primitive=self.primitive,
-            graph_method=self.graph_method,
-            prop_list=[prop])
-
+        # preproc_path = Path(self.path).with_suffix('.pkl')
+        preproc_path = Path(self.path).with_suffix('.joblib')
+        if preproc_path.exists():
+            # self.cached_data = pickle.loads(preproc_path.read_bytes())
+            self.cached_data = joblib.load(preproc_path)
+        else:
+            self.cached_data = preprocess(
+                self.path,
+                preprocess_workers,
+                niggli=self.niggli,
+                primitive=self.primitive,
+                graph_method=self.graph_method,
+                prop_list=[prop, cond])
+            print("Writing pickle file...", preproc_path)
+            # preproc_path.write_bytes(pickle.dumps(self.cached_data))
+            joblib.dump(self.cached_data, preproc_path)
+        
         add_scaled_lattice_prop(self.cached_data, lattice_scale_method)
         self.lattice_scaler = None
         self.scaler = None
+        self.cond_scaler = None
 
     def __len__(self) -> int:
         return len(self.cached_data)
@@ -48,6 +62,8 @@ class CrystDataset(Dataset):
 
         # scaler is set in DataModule set stage
         prop = self.scaler.transform(data_dict[self.prop])
+        # cond = self.cond_scaler.transform(data_dict[self.cond])
+        cond = torch.tensor([data_dict[self.cond]]).float()
         (frac_coords, atom_types, lengths, angles, edge_indices,
          to_jimages, num_atoms) = data_dict['graph_arrays']
 
@@ -66,6 +82,7 @@ class CrystDataset(Dataset):
             num_bonds=edge_indices.shape[0],
             num_nodes=num_atoms,  # special attribute used for batching in pytorch geometric
             y=prop.view(1, -1),
+            cond=cond.view(1, -1),
         )
         return data
 
@@ -136,9 +153,13 @@ def main(cfg: omegaconf.DictConfig):
     scaler = get_scaler_from_data_list(
         dataset.cached_data,
         key=dataset.prop)
+    cond_scaler = get_scaler_from_data_list(
+        dataset.cached_data,
+        key=dataset.cond)
 
     dataset.lattice_scaler = lattice_scaler
     dataset.scaler = scaler
+    dataset.cond_scaler = cond_scaler
     data_list = [dataset[i] for i in range(len(dataset))]
     batch = Batch.from_data_list(data_list)
     return batch

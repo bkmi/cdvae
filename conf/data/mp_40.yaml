@@ -1,5 +1,6 @@
-root_path: ${oc.env:PROJECT_ROOT}/data/mp_20
-prop: formation_energy_per_atom
+root_path: ${oc.env:PROJECT_ROOT}/data/mp_40atoms_ehull1
+# prop: formation_energy_per_atom
+prop: e_above_hull
 cond: e_above_hull
 num_targets: 1
 # prop: scaled_lattice
@@ -8,14 +9,14 @@ niggli: true
 primitive: False
 graph_method: crystalnn
 lattice_scale_method: scale_length
-preprocess_workers: 30
+preprocess_workers: 80
 readout: mean
-max_atoms: 20
+max_atoms: 40
 otf_graph: false
 eval_model_name: mp20
 
 
-train_max_epochs: 2000
+train_max_epochs: 1000
 early_stopping_patience: 100000
 teacher_forcing_max_epoch: 500
 
@@ -61,26 +62,11 @@ datamodule:
         preprocess_workers: ${data.preprocess_workers}
 
   num_workers:
-    train: 10
-    val: 10
-    test: 10
-
-  # batch_size:
-  #   train: 256
-  #   val: 256
-  #   test: 256
-
-  # batch_size:
-  #   train: 48
-  #   val: 48
-  #   test: 48
-
-  # batch_size:
-  #   train: 20
-  #   val: 20
-  #   test: 20
+    train: 0
+    val: 0
+    test: 0
 
   batch_size:
-    train: 1
-    val: 1
-    test: 1
+    train: 256
+    val: 256
+    test: 256

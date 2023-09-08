@@ -66,10 +66,14 @@ class CrystDataModule(pl.LightningDataModule):
             self.scaler = get_scaler_from_data_list(
                 train_dataset.cached_data,
                 key=train_dataset.prop)
+            self.cond_scaler = get_scaler_from_data_list(
+                train_dataset.cached_data,
+                key=train_dataset.cond)
         else:
             self.lattice_scaler = torch.load(
                 Path(scaler_path) / 'lattice_scaler.pt')
             self.scaler = torch.load(Path(scaler_path) / 'prop_scaler.pt')
+            self.cond_scaler = torch.load(Path(scaler_path) / 'cond_scaler.pt')
 
     def setup(self, stage: Optional[str] = None):
         """
@@ -84,9 +88,11 @@ class CrystDataModule(pl.LightningDataModule):
 
             self.train_dataset.lattice_scaler = self.lattice_scaler
             self.train_dataset.scaler = self.scaler
+            self.train_dataset.cond_scaler = self.cond_scaler
             for val_dataset in self.val_datasets:
                 val_dataset.lattice_scaler = self.lattice_scaler
                 val_dataset.scaler = self.scaler
+                val_dataset.cond_scaler = self.cond_scaler
 
         if stage is None or stage == "test":
             self.test_datasets = [
@@ -96,6 +102,7 @@ class CrystDataModule(pl.LightningDataModule):
             for test_dataset in self.test_datasets:
                 test_dataset.lattice_scaler = self.lattice_scaler
                 test_dataset.scaler = self.scaler
+                test_dataset.cond_scaler = self.cond_scaler
 
     def train_dataloader(self) -> DataLoader:
         return DataLoader(
