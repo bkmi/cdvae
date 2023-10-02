@@ -1,27 +1,49 @@
 
-CKPT_ROOT="/checkpoint/anuroops/chemistry/cdvae/cdvae/exp/hydra/singlerun/"
+# CKPT_ROOT="/checkpoint/anuroops/chemistry/cdvae/cdvae/results/hydra/singlerun/"
+CKPT_ROOT="/private/home/bkmi/sci/cdvae/results/hydra/singlerun"
 
 function submit {
     echo $*
-    mkdir -p exp/slurm/`date -I`/
+    mkdir -p results/slurm/`date -I`/
     sbatch --job-name=$1 \
-        --output=exp/slurm/`date -I`/$1-%j.out --error=exp/slurm/`date -I`/$1-%j.out \
-        --nodes=1 --ntasks-per-node=1 --cpus-per-task=5 \
+        --output=results/slurm/`date -I`/$1-%j.out --error=results/slurm/`date -I`/$1-%j.out \
+        --nodes=1 --ntasks-per-node=1 --cpus-per-task=11 \
         --gres=gpu:1 --signal=USR1@600 --open-mode=append \
-        --time=72:00:00 --partition=ocp \
+        --time=72:00:00 \
+        --partition=ocp \
         --wrap="srun $2" --constraint="volta32gb"
 }
 
 function submit8 {
     echo $*
-    mkdir -p exp/slurm
+    mkdir -p results/slurm
     sbatch --job-name=$1 \
-        --output=exp/slurm/$1-%j.out --error=exp/slurm/$1-%j.out \
-        --nodes=1 --ntasks-per-node=1 --cpus-per-task=5 \
+        --output=results/slurm/`date -I`/$1-%j.out --error=results/slurm/`date -I`/$1-%j.out \
+        --nodes=1 --ntasks-per-node=1 --cpus-per-task=11 \
         --gres=gpu:8 --signal=USR1@600 --open-mode=append \
         --time=72:00:00 --partition=ocp \
         --wrap="srun $2"
 }
+
+# name="mptiny"
+# for lr in 0.00025; do
+#     name="mptiny_${lr}"
+#     submit "$name" "python cdvae/run.py data=mp_tiny expname=${name} optim.optimizer.lr=${lr}"
+# done
+
+# name="mp20"
+# for lr in 0.00025 0.0005 0.00075 0.001; do
+#     name="mp20_${lr}"
+#     submit "$name" "python cdvae/run.py data=mp_20 expname=${name} optim.optimizer.lr=${lr}"
+# done
+
+name="mp20"
+for lr in 0.001; do
+    name="mp20_${lr}_timecond"
+    submit "$name" "python cdvae/run.py data=mp_20 expname=${name} optim.optimizer.lr=${lr} model.condition_on_time=true"
+done
+
+###############
 
 # name="mp20_scn"
 # for lr in 0.0006 0.0008 0.002; do

@@ -29,8 +29,9 @@ from cdvae.pl_modules.escn.so3 import SO3_Rotation
 from cdvae.pl_modules.escn.so3 import SO3_Grid
 from cdvae.pl_modules.escn.so3 import CoefficientMapping
 
-from ocpmodels.models.utils.outer_block import Rank2Block
-from ocpmodels.models.utils.outer_block import Rank2DecompositionBlock
+# from ocpmodels.models.utils.outer_block import Rank2Block
+# from ocpmodels.models.utils.outer_block import Rank2DecompositionBlock
+from experimental.saro00.utils.outer_block import Rank2Block, Rank2DecompositionBlock
 
 
 try:

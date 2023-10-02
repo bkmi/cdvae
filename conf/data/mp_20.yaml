@@ -65,10 +65,10 @@ datamodule:
     val: 10
     test: 10
 
-  # batch_size:
-  #   train: 256
-  #   val: 256
-  #   test: 256
+  batch_size:
+    train: 256
+    val: 256
+    test: 256
 
   # batch_size:
   #   train: 48
@@ -80,7 +80,7 @@ datamodule:
   #   val: 20
   #   test: 20
 
-  batch_size:
-    train: 1
-    val: 1
-    test: 1
+  # batch_size:
+  #   train: 1024
+  #   val: 1024
+  #   test: 1024

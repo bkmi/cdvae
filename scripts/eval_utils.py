@@ -1,12 +1,13 @@
 import itertools
+from typing import List
 import numpy as np
+from omegaconf import OmegaConf
 import torch
 import hydra
 
 from scipy.spatial.distance import pdist
 from scipy.spatial.distance import cdist
-from hydra.experimental import compose
-from hydra import initialize_config_dir
+from hydra import compose, initialize_config_dir
 from pathlib import Path
 
 import smact
@@ -24,6 +25,11 @@ CompScaler = StandardScaler(
     stds=np.array(CompScalerStds),
     replace_nan_token=0.)
 
+
+def split_concat_attribute_into_crystals(attribute: torch.Tensor, num_atoms: torch.Tensor) -> List[torch.Tensor]:
+    return attribute.tensor_split(num_atoms.squeeze().cumsum(0), dim=1)[:-1]
+
+# def gen_to_geometric(eval_gen: Dict[str, torch.Tensor]) -> DataBatch
 
 def load_data(file_path):
     if file_path[-3:] == 'npy':
@@ -52,7 +58,7 @@ def load_config(model_path):
     return cfg
 
 
-def load_model(model_path, load_data=False, testing=True):
+def load_model(model_path, load_data=False, testing=True, batch_size: int = None):
     with initialize_config_dir(str(model_path)):
         cfg = compose(config_name='hparams')
         model = hydra.utils.instantiate(
@@ -72,8 +78,14 @@ def load_model(model_path, load_data=False, testing=True):
         model.scaler = torch.load(model_path / 'prop_scaler.pt')
 
         if load_data:
+            kwargs = {}
+            if batch_size is not None:
+                kwargs["batch_size"] = OmegaConf.create({k: batch_size for k in ["test", "train", "val"]})
             datamodule = hydra.utils.instantiate(
-                cfg.data.datamodule, _recursive_=False, scaler_path=model_path
+                cfg.data.datamodule, 
+                _recursive_=False, 
+                scaler_path=model_path,
+                **kwargs,
             )
             if testing:
                 datamodule.setup('test')

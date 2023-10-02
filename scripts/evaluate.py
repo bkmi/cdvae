@@ -176,8 +176,10 @@ def main(args):
     # load_data if do reconstruction.
     model_path = Path(args.model_path)
     model, test_loader, cfg = load_model(
-        model_path, load_data=('recon' in args.tasks) or
-        ('opt' in args.tasks and args.start_from == 'data'))
+        model_path, 
+        load_data=('recon' in args.tasks) or ('opt' in args.tasks and args.start_from == 'data'),
+        batch_size=args.batch_size,
+    )
     ld_kwargs = SimpleNamespace(n_step_each=args.n_step_each,
                                 step_lr=args.step_lr,
                                 min_sigma=args.min_sigma,
@@ -270,7 +272,7 @@ if __name__ == '__main__':
     parser.add_argument('--num_evals', default=1, type=int)
     parser.add_argument('--num_batches_to_samples', default=20, type=int)
     parser.add_argument('--start_from', default='data', type=str)
-    parser.add_argument('--batch_size', default=500, type=int)
+    parser.add_argument('--batch_size', default=512, type=int)
     parser.add_argument('--force_num_atoms', action='store_true')
     parser.add_argument('--force_atom_types', action='store_true')
     parser.add_argument('--down_sample_traj_step', default=10, type=int)

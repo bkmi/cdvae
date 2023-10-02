@@ -149,7 +149,7 @@ def run(cfg: DictConfig) -> None:
         check_val_every_n_epoch=cfg.logging.val_check_interval,
         progress_bar_refresh_rate=cfg.logging.progress_bar_refresh_rate,
         resume_from_checkpoint=ckpt,
-        auto_select_gpus=True,
+        auto_select_gpus=True if cfg.train.pl_trainer.gpus > 0 else False,
         **cfg.train.pl_trainer,
     )
     hydra.utils.log.info(f"GPUS: {trainer.gpus}")
