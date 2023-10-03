@@ -8,7 +8,7 @@ from pathlib import Path
 from types import SimpleNamespace
 from torch_geometric.data import Batch
 
-from eval_utils import load_model
+from cdvae.scripts.eval_utils import load_model
 
 
 def reconstructon(loader, model, ld_kwargs, num_evals,
