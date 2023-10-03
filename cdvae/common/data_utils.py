@@ -1,3 +1,4 @@
+from typing import Literal
 import numpy as np
 import pandas as pd
 import networkx as nx
@@ -651,8 +652,14 @@ def get_scaler_from_data_list(data_list, key):
     return scaler
 
 
-def preprocess(input_file, num_workers, niggli, primitive, graph_method,
-               prop_list):
+def preprocess(
+        input_file: str, 
+        num_workers: int, 
+        niggli: bool, 
+        primitive: bool, 
+        graph_method: Literal["crystalnn", "none"],
+        prop_list,
+    ):
     df = pd.read_csv(input_file)
 
     def process_one(row, niggli, primitive, graph_method, prop_list):

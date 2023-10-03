@@ -1,5 +1,8 @@
+from __future__ import annotations
+
 import pickle
 from pathlib import Path
+from typing import Literal
 import joblib
 import hydra
 import omegaconf
@@ -13,6 +16,32 @@ from torch_geometric.data import Data
 from cdvae.common.utils import PROJECT_ROOT
 from cdvae.common.data_utils import (
     preprocess, preprocess_tensors, add_scaled_lattice_prop)
+
+
+def preprocess_or_load(
+        path: Path | str,
+        num_workers: int, 
+        niggli: bool, 
+        primitive: bool, 
+        graph_method: Literal["crystalnn", "none"],
+        prop_list: list,
+    ) -> list:
+    preproc_path = Path(path).with_suffix('.joblib')
+    if preproc_path.exists():
+        # cached_data = pickle.loads(preproc_path.read_bytes())
+        cached_data = joblib.load(preproc_path)
+    else:
+        cached_data = preprocess(
+            path,
+            num_workers=num_workers,
+            niggli=niggli,
+            primitive=primitive,
+            graph_method=graph_method,
+            prop_list=prop_list)
+        print("Writing pickle file...", preproc_path)
+        # preproc_path.write_bytes(pickle.dumps(cached_data))
+        joblib.dump(cached_data, preproc_path)
+    return cached_data
 
 
 class CrystDataset(Dataset):
@@ -32,22 +61,30 @@ class CrystDataset(Dataset):
         self.graph_method = graph_method
         self.lattice_scale_method = lattice_scale_method
 
-        # preproc_path = Path(self.path).with_suffix('.pkl')
-        preproc_path = Path(self.path).with_suffix('.joblib')
-        if preproc_path.exists():
-            # self.cached_data = pickle.loads(preproc_path.read_bytes())
-            self.cached_data = joblib.load(preproc_path)
-        else:
-            self.cached_data = preprocess(
-                self.path,
-                preprocess_workers,
-                niggli=self.niggli,
-                primitive=self.primitive,
-                graph_method=self.graph_method,
-                prop_list=[prop, cond])
-            print("Writing pickle file...", preproc_path)
-            # preproc_path.write_bytes(pickle.dumps(self.cached_data))
-            joblib.dump(self.cached_data, preproc_path)
+        self.cached_data = preprocess_or_load(
+            path=self.path,
+            num_workers=preprocess_workers,
+            niggli=self.niggli,
+            primitive=self.primitive,
+            graph_method=self.graph_method,
+            prop_list=[prop, cond],
+        )
+        # # preproc_path = Path(self.path).with_suffix('.pkl')
+        # preproc_path = Path(self.path).with_suffix('.joblib')
+        # if preproc_path.exists():
+        #     # self.cached_data = pickle.loads(preproc_path.read_bytes())
+        #     self.cached_data = joblib.load(preproc_path)
+        # else:
+        #     self.cached_data = preprocess(
+        #         self.path,
+        #         preprocess_workers,
+        #         niggli=self.niggli,
+        #         primitive=self.primitive,
+        #         graph_method=self.graph_method,
+        #         prop_list=[prop, cond])
+        #     print("Writing pickle file...", preproc_path)
+        #     # preproc_path.write_bytes(pickle.dumps(self.cached_data))
+        #     joblib.dump(self.cached_data, preproc_path)
         
         add_scaled_lattice_prop(self.cached_data, lattice_scale_method)
         self.lattice_scaler = None
